@@ -1,5 +1,13 @@
 # TensorFold
 
+> **Krishando fork, for the DeepSeek-V4.1-Flash 2.86 bpw quant.** This is a fork of
+> [bertholomus/TensorFold](https://github.com/bertholomus/TensorFold) (commit `808eb4a`), which is a fork of
+> [ashhart/TensorFold](https://github.com/ashhart/TensorFold). It adds native FP8 backbone and mixed-width EXL3 expert
+> support so the engine can serve [Krishando/DeepSeek-V4.1-Flash-EXL3-2.86bpw](https://huggingface.co/Krishando/DeepSeek-V4.1-Flash-EXL3-2.86bpw)
+> on two DGX Sparks. **To run it, see [`recipes/dsv41-2spark/`](recipes/dsv41-2spark/README.md).** The changes are listed in
+> `NOTICE` under "Further changes in this fork". Credit for the engine goes to ashhart (TensorFold) and bertholomus
+> (the DeepSeek-V4.1 family); the model is DeepSeek's. The note below is bertholomus's, unchanged.
+
 > **This is a fork of TensorFold 0.6.6**, not the upstream project. It adds the `deepseek_v41` family: DeepSeek-V4.1-Flash
 > (EXL3), tensor-parallel over two NVIDIA GB10 (DGX Spark) nodes. The family is in
 > `src/tensorfold/families/deepseek_v41/`, its design, report and attribution in `tools/dsv41/`

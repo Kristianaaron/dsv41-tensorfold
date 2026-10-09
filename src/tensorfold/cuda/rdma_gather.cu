@@ -535,7 +535,10 @@ void link_peers(int64_t h, const std::vector<py::tuple>& remote) {
             TORCH_CHECK(peer.gid[d].size() == 16, "rdma gather: a GID is 16 bytes");
             ibv_qp_attr rtr{};
             rtr.qp_state = IBV_QPS_RTR;
-            rtr.path_mtu = IBV_MTU_4096;
+            // cebu: the port's active MTU (4096 needs jumbo frames; on a 1500-byte link RoCE runs 1024 and larger
+            // packets are dropped: "transport retry counter exceeded")
+            ibv_port_attr pa{};
+            rtr.path_mtu = ibv_query_port(g.nics[d].ctx, g.port, &pa) == 0 ? pa.active_mtu : IBV_MTU_1024;
             rtr.dest_qp_num = peer.qpn[d];
             rtr.rq_psn = peer.psn[d];
             rtr.max_dest_rd_atomic = 1;

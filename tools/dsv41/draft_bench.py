@@ -55,8 +55,8 @@ def load(model_dir, rank=0, world=2, other_head=False):
     last = f"mtp.{n - 1}"
     blocks = [load_block(sh, cfg, f"mtp.{j}", cfg.n_layers + j, rank, world, cfg.dspark_routed) for j in range(n)]
     w.dspark = DSparkWeights(blocks, linear(sh, "mtp.0.main_proj"), plain("mtp.0.main_norm.weight"),
-                             plain(f"{last}.norm.weight"), plain(f"{last}.markov_head.embed.weight"),
-                             plain(f"{last}.markov_head.head.weight"), plain(f"{last}.confidence_head.proj.weight"))
+                             plain(f"{last}.norm.weight"), plain(f"{last}.markov_head.embed.weight").half(),
+                             plain(f"{last}.markov_head.head.weight").half(), plain(f"{last}.confidence_head.proj.weight"))
     heads = None
     if other_head:
         heads = [linear(sh, "head", cols=(r * vocab_l, (r + 1) * vocab_l)) if r != rank else w.head

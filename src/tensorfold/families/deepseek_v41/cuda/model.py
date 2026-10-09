@@ -21,6 +21,7 @@ from tensorfold.cuda.exl3 import prefill as exl3_prefill
 
 from ..config import Cfg
 from . import kernels as K
+from .native_fp8 import native_mm
 from ..ops import (BF16, F32, EngramHasher, HostIds, RopeTables, fp4_qd, fp8_qd, hc_split_sinkhorn, rms_norm, rope_,
                    sparse_attn)
 
@@ -155,6 +156,8 @@ def _l2_tensors(model, lay, kind: str, nxt=None) -> list:
         return [wo.words for wo in lay.wo_a] + [lay.wo_b.words]
     if kind == "moe":
         ex = lay.experts
+        if not hasattr(ex, "keep"):              # cebu: MXFP4 draft experts (no EXL3 trellises to prefetch)
+            return [lay.hc_ffn[0], lay.gate_w]
         e = ex.count
         # the shared expert's trellises unless SHARED_OVERLAP computes it beside the gate (it streams them itself then)
         shared = [ex.keep[e - 1], ex.keep[2 * e - 1], ex.keep[3 * e - 1]] if len(ex.keep) == 3 * e else []
@@ -236,6 +239,9 @@ def dequant_fp32(words_or_trellis, suh, svh, k: int, n: int, layer=None) -> torc
 def mm(layer, x: torch.Tensor, out_dtype=BF16, ws: exl3_prefill.Workspace | None = None) -> torch.Tensor:
     """x [M, K] @ W: the row-invariant EXL3 linear up to 128 rows, the prompt GEMM beyond."""
 
+    y = native_mm(layer, x, out_dtype)                 # cebu packs: native FP8 / bf16 projections
+    if y is not None:
+        return y
     m = x.shape[0]
     if EXACT_MM:
         w = dequant_fp32(None, layer.suh, layer.svh, layer.k, layer.n, layer=layer)
@@ -260,6 +266,12 @@ def attn_in(lay, x: torch.Tensor, comp: bool = True, xh: list | None = None) -> 
     ck = comp and lay.comp_wkv is not None
     cg = ck and lay.comp_wgate is not None
     ck_dt = BF16 if lay.ratio == 1 else F32
+    nat = getattr(lay, "nat_in", None)             # cebu: native FP8 wq_a and wkv in one launch (native_fp8.fuse_inputs)
+    if nat is not None and x.shape[0] <= 128:
+        y = mm(nat, x)
+        na = lay.wq_a.n
+        return (y[:, :na].contiguous(), y[:, na:].contiguous(), mm(lay.comp_wkv, x, ck_dt) if ck else None,
+                mm(lay.comp_wgate, x, F32) if cg else None)
     if not GROUPED or EXACT_MM or x.shape[0] > 128:
         return (mm(lay.wq_a, x), mm(lay.wkv, x), mm(lay.comp_wkv, x, ck_dt) if ck else None,
                 mm(lay.comp_wgate, x, F32) if cg else None)
@@ -1063,12 +1075,13 @@ class Model:
         n = x.shape[0]
         topk = topk or c.topk
         slots = topk + 1
-        shared_id = lay.experts.count - 1
+        nat = getattr(lay, "shared_native", None)       # cebu packs: the shared expert in native FP8, beside the kernel
+        shared_id = lay.experts.count if nat is not None else lay.experts.count - 1
         vl = getattr(lay, "gate_b_vl", None)
         if img is not None and vl is None:
             vl = lay.gate_b                   # no VL bias in this pack: image rows route as text (warned at load)
         side_done = None
-        if shared_side and KERNELS and SHARED_OVERLAP and not EXACT_MM and n < exl3_experts.EXACT_ROWS:
+        if nat is None and shared_side and KERNELS and SHARED_OVERLAP and not EXACT_MM and n < exl3_experts.EXACT_ROWS:
             # the shared expert starts now on the side stream; the routing marks its slot as computed elsewhere
             side_done = self._shared_side(lay, x, n, slots)
             shared_id = lay.experts.count
@@ -1096,11 +1109,22 @@ class Model:
             wts = wts * c.route_scale
             pick = torch.cat([ind, torch.full((n, 1), shared_id, dtype=ind.dtype, device=x.device)], 1).to(torch.int32)
             wts = torch.cat([wts, torch.ones((n, 1), dtype=F32, device=x.device)], 1).contiguous()
+        if nat is not None:
+            wts[:, -1] = 0.0                     # the shared slot (index >= E: not computed here) adds nothing
+        from tensorfold.cuda.nvfp4 import experts as _nvx
+
+        if isinstance(lay.experts, _nvx.Experts4):   # cebu: DSpark draft experts in MXFP4 (native_fp4_experts)
+            from . import native_fp4_experts as _nfx
+
+            out = _nfx.routed(x, pick, wts, lay.experts)
+            return out + nat(x, c.swiglu_limit) if nat is not None else out
         s = self._moe_scratch(lay, n, slots)
         if EXACT_MM:
             return self._moe_exact(lay, x, pick, wts)
         out = exl3_experts.routed(x.contiguous(), pick.contiguous(), wts, lay.experts, s, None, n,
                                   limit=c.swiglu_limit, act_mode=exl3_experts.ACT_F32, before_down=side_done)
+        if nat is not None:
+            out = out + nat(x, c.swiglu_limit)
         return out                                                        # fp32 partial [n, d]
 
     def _moe_scratch(self, lay, n: int, slots: int) -> "exl3_experts.Scratch":

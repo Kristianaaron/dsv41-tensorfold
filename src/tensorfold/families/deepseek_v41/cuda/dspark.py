@@ -18,6 +18,7 @@ from . import kernels as K
 from . import markov as _markov
 from . import model as _model
 from . import rounds as _rounds
+from .native_fp8 import draft_head
 from .model import KV_QUANT, Model, attn_in, l2_fork, l2_join, mm, q_proj, wo_a_out, wo_ab
 
 # TF_DS_DRAFT_FUSED=1 (default): the batched drafter graph's stages take the decode round's fused kernels (each
@@ -172,7 +173,7 @@ class Drafter:
             K.hc_post(m.comm.gather(m.moe(lay, x, topk=self.topk)), h, post, comb, h)
             pre, pre_f = pre_f, pre
         xc = K.collapse(h, pre)                                           # [n, d] (pre-norm, for the confidence)
-        local = mm(m.w.head, K.rmsnorm(xc, self.dw.norm, c.eps), F32)
+        local = mm(draft_head(m.w), K.rmsnorm(xc, self.dw.norm, c.eps), F32)
         logits = m.comm.gather(local).permute(1, 0, 2).reshape(n, -1)
         out, embs = [token], []
         for i in range(n):
@@ -225,7 +226,7 @@ class DraftGraph:
             K.hc_post(m.comm.gather(m.moe(lay, x, topk=d.topk)), h, post, comb, h)
             pre, pre_f = pre_f, pre
         xc = K.collapse(h, pre)
-        local = mm(m.w.head, K.rmsnorm(xc, d.dw.norm, c.eps), F32)
+        local = mm(draft_head(m.w), K.rmsnorm(xc, d.dw.norm, c.eps), F32)
         out = torch.empty((n + 1,), dtype=torch.long, device=dev)
         out[0:1] = self.token
         if self.mk is not None:                                           # markov.py: the same drafts
@@ -351,7 +352,7 @@ class BatchDraftGraph:
             pending = m.comm.gather(self._attention(lay, x, ring, pos, wpos, rbase, fused=True))
             h = pre_mix(h, lay.hc_ffn, pre_a, lay.ffn_norm, pre_f)
             y = m.moe(lay, x, topk=d.topk)
-            l2_fork(m, lay, "next", blocks[j + 1] if j + 1 < len(blocks) else m.w.head)
+            l2_fork(m, lay, "next", blocks[j + 1] if j + 1 < len(blocks) else draft_head(m.w))
             pending = m.comm.gather(y)
             pre, pre_f = pre_f, pre
         K.hc_post(pending, h, post, comb, h)
@@ -392,7 +393,7 @@ class BatchDraftGraph:
                 K.hc_post(m.comm.gather(m.moe(lay, x, topk=d.topk)), h, post, comb, h)
                 pre, pre_f = pre_f, pre
         xc = K.collapse(h, pre)
-        local = mm(m.w.head, K.rmsnorm(xc, d.dw.norm, c.eps), F32)
+        local = mm(draft_head(m.w), K.rmsnorm(xc, d.dw.norm, c.eps), F32)
         steps = self.steps
         out = torch.empty((N, steps + 1), dtype=torch.long, device=dev)
         out[:, 0] = self.tokens

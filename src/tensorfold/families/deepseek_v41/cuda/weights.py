@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import shutil
 import struct
 from collections import deque
@@ -30,7 +31,8 @@ class Shards:
     """Header offsets of every tensor in a folder; reads a whole tensor or a dim-0 slice straight from the file."""
 
     DT = {"BF16": torch.bfloat16, "F16": torch.float16, "F32": torch.float32, "I16": torch.int16,
-          "I32": torch.int32, "F8_E4M3": torch.float8_e4m3fn, "F8_E8M0": torch.uint8, "U8": torch.uint8}
+          "I32": torch.int32, "F8_E4M3": torch.float8_e4m3fn, "F8_E8M0": torch.uint8, "U8": torch.uint8,
+          "I8": torch.uint8}   # cebu: DeepSeek MXFP4 draft experts store packed E2M1 pairs as I8
 
     def __init__(self, root: str | Path):
         self.root = Path(root)
@@ -43,6 +45,44 @@ class Shards:
             for name, e in header.items():
                 self.entries[name] = (path, 8 + size, e)
         self._files: dict[Path, object] = {}
+        self.overlaid = self._overlay(os.environ.get("TF_DS_BACKBONE_OVERLAY"))
+
+    @staticmethod
+    def _module(name: str) -> str:
+        """A tensor's linear module, with a sliced wo_a's '.slice.N' folded into its parent (both layouts load)."""
+
+        mod = name.rsplit(".", 1)[0]
+        return re.sub(r"\.slice\.\d+$", "", mod)
+
+    def _overlay(self, root: str | None) -> int:
+        """cebu 2026-10-08 (TF_DS_BACKBONE_OVERLAY=<dir>): backbone linears stored there as EXL3 (a '.trellis' tensor)
+        replace this folder's own tensors of the same module, so a pack's experts can be served with another
+        backbone without rewriting the pack. Routed experts, the DSpark/MTP blocks, norms, gates, embeddings and vision
+        always come from this folder. Returns the number of modules replaced."""
+
+        if not root:
+            return 0
+        over: dict[str, tuple[Path, int, dict]] = {}
+        for path in sorted(Path(root).glob("*.safetensors")):
+            with open(path, "rb") as f:
+                size = struct.unpack("<Q", f.read(8))[0]
+                header = json.loads(f.read(size))
+            header.pop("__metadata__", None)
+            for name, e in header.items():
+                over[name] = (path, 8 + size, e)
+        mods = {self._module(n) for n in over if n.endswith(".trellis")}
+        mods = {m for m in mods if ".experts." not in m and not m.startswith("mtp")}
+        # TF_DS_BACKBONE_OVERLAY_SKIP=<regex>: modules kept from this folder (e.g. 'shared_experts' when the overlay's
+        # EXL3 codebook differs from the routed experts', which the grouped expert kernel needs to share)
+        skip = os.environ.get("TF_DS_BACKBONE_OVERLAY_SKIP")
+        if skip:
+            mods = {m for m in mods if not re.search(skip, m)}
+        for name in [n for n in self.entries if self._module(n) in mods]:
+            del self.entries[name]
+        for name, ent in over.items():
+            if self._module(name) in mods:
+                self.entries[name] = ent
+        return len(mods)
 
     def __contains__(self, name: str) -> bool:
         return name in self.entries
@@ -109,7 +149,7 @@ class RankCache:
         else:
             self.tmp = path.with_suffix(".partial")
             self.f = open(self.tmp, "wb")
-            self.index, self.at = [], 0
+            self.index, self.at, self.dropped = [], 0, 0
 
     @classmethod
     def open(cls, root: str | None, model_dir: Path, rank: int, world: int, extra: str) -> "RankCache | None":
@@ -165,6 +205,9 @@ class RankCache:
             if k <= 0:
                 raise IOError(f"short read of {self.path}")
             got += k
+        # cebu 2026-10-08: the bytes now live in buf; their page-cache copy would sit in the unified memory the GPU
+        # allocates from (GB10's driver does not reclaim page cache), so drop it
+        os.posix_fadvise(self.fd, off, n, os.POSIX_FADV_DONTNEED)
         return buf
 
     def take(self, key: str) -> torch.Tensor:
@@ -190,6 +233,13 @@ class RankCache:
         self.f.write(memoryview(raw))
         self.index.append((key, str(t.dtype).split(".")[1], list(t.shape), self.at, int(t.numel() * t.element_size())))
         self.at += int(t.numel() * t.element_size())
+        # cebu 2026-10-08: every GiB, write the dirty pages out and drop them, so the first start's ~106 GB write does
+        # not fill the unified memory with page cache while the weights are loading into it
+        if self.at - self.dropped >= 1 << 30:
+            self.f.flush()
+            os.fdatasync(self.f.fileno())
+            os.posix_fadvise(self.f.fileno(), self.dropped, self.at - self.dropped, os.POSIX_FADV_DONTNEED)
+            self.dropped = self.at
 
     def close(self, ok: bool = True) -> bool:
         """True when a written file was published (or every kept tensor was read back)."""
@@ -289,7 +339,28 @@ def pack_trellises(mats: list) -> list:
     return out
 
 
+def _wo_a_slices(sh: Shards, p: str, cfg, rank: int, gl: int) -> list:
+    """This rank's wo_a head-group slices. Mia-style packs store them pre-split (``wo_a.slice.g``); the checkpoint's
+    native FP8 wo_a (cebu packs) is one [groups * o_rank, per-group input] tensor: group g = its output rows
+    g * o_rank .. (g + 1) * o_rank (scales sliced with them)."""
+
+    from .native_fp8 import NativeFp8Linear, is_native
+
+    if is_native(sh, f"{p}.attn.wo_a"):
+        r = cfg.o_rank
+        return [NativeFp8Linear.load(sh, f"{p}.attn.wo_a", cols=(g * r, (g + 1) * r)) for g in range(rank * gl, (rank + 1) * gl)]
+    return [linear(sh, f"{p}.attn.wo_a.slice.{g}") for g in range(rank * gl, (rank + 1) * gl)]
+
+
 def linear(sh: Shards, prefix: str, cols=None, rows=None) -> Exl3Linear:
+    # cebu packs: every projection but the routed experts in the checkpoint's native FP8 (head bf16); see
+    # docs/cebu-native-fp8-port.md
+    from .native_fp8 import Bf16Linear, NativeFp8Linear, is_native
+
+    if is_native(sh, prefix):
+        return NativeFp8Linear.load(sh, prefix, cols, rows)
+    if f"{prefix}.trellis" not in sh and f"{prefix}.weight" in sh:
+        return Bf16Linear.load(sh, prefix, cols, rows)
     tr, suh, svh, cb = exl3_parts(sh, prefix, cols, rows)
     return Exl3Linear.from_tensors(tr, suh, svh, cb)
 
@@ -375,7 +446,7 @@ def load_block(sh: Shards, cfg: Cfg, p: str, i: int, rank: int, world: int, n_ex
         wq_b=linear(sh, f"{p}.attn.wq_b", cols=(rank * Hl * hd, (rank + 1) * Hl * hd)),
         wkv=linear(sh, f"{p}.attn.wkv"), kv_norm=plain(f"{p}.attn.kv_norm.weight"),
         sink=plain(f"{p}.attn.attn_sink", torch.float32)[rank * Hl:(rank + 1) * Hl].contiguous(),
-        wo_a=[linear(sh, f"{p}.attn.wo_a.slice.{g}") for g in range(rank * gl, (rank + 1) * gl)],
+        wo_a=_wo_a_slices(sh, p, cfg, rank, gl),
         wo_b=linear(sh, f"{p}.attn.wo_b", rows=(rank * gl * cfg.o_rank, (rank + 1) * gl * cfg.o_rank)),
     )
     if i in cfg.kv_sources:
@@ -394,7 +465,29 @@ def load_block(sh: Shards, cfg: Cfg, p: str, i: int, rank: int, world: int, n_ex
     cols = (rank * inter_l, (rank + 1) * inter_l)
     gate, up, down = [], [], []
     cb = None
-    for e in list(range(n_experts)) + ["shared"]:
+    # cebu packs: a native FP8 shared expert runs beside the routed experts (native_fp8.NativeSharedMLP); the EXL3
+    # kernel then holds only the routed experts and the MoE marks the shared slot as computed elsewhere
+    from .native_fp8 import NativeSharedMLP, is_native
+
+    from .native_fp8 import fuse_inputs
+
+    lay.nat_in = fuse_inputs([lay.wq_a, lay.wkv])        # cebu: one decode launch for wq_a and wkv (None for EXL3)
+    shared_native = is_native(sh, f"{p}.ffn.shared_experts.w1")
+    lay.shared_native = NativeSharedMLP.load(sh, f"{p}.ffn.shared_experts", cols) if shared_native else None
+    from . import native_fp4_experts as nfx
+
+    if nfx.is_mxfp4(sh, f"{p}.ffn.experts.0"):
+        # cebu packs: DSpark draft blocks keep the checkpoint's MXFP4 experts (exact NVFP4 conversion, milestone 1b)
+        assert shared_native, f"{p}: MXFP4 routed experts expect a native FP8 shared expert"
+        lay.experts = nfx.load(sh, p, n_experts, cols, cfg.swiglu_limit)
+        if i in cfg.engram_layers:
+            n_cols = (cfg.engram_ngram - 1) * cfg.engram_heads
+            per = n_cols // world * cfg.engram_dim
+            lay.engram_wkv = linear(sh, f"{p}.engram.wkv", rows=(rank * per, (rank + 1) * per))
+            lay.engram_qk = (plain(f"{p}.engram.q_weight", torch.float32)
+                             * plain(f"{p}.engram.k_weight", torch.float32)).contiguous()
+        return lay
+    for e in list(range(n_experts)) + ([] if shared_native else ["shared"]):
         ep = f"{p}.ffn.experts.{e}" if e != "shared" else f"{p}.ffn.shared_experts"
         g = exl3_parts(sh, f"{ep}.w1", cols=cols, device=None)
         u = exl3_parts(sh, f"{ep}.w3", cols=cols, device=None)
@@ -426,9 +519,15 @@ def load(model_dir: str | Path, rank: int, world: int, n_layers: int | None = No
     t0 = time.time()
     cfg = Cfg.read(model_dir)
     sh = Shards(model_dir)
+    over = os.environ.get("TF_DS_BACKBONE_OVERLAY") or ""
+    if over:
+        log(f"[tensorfold] rank {rank}: backbone overlay {over}: {sh.overlaid} modules replaced")
+        over += "|" + "|".join(f"{p.name}:{p.stat().st_size}:{p.stat().st_mtime_ns}"
+                               for p in sorted(Path(over).glob("*.safetensors")))
+        over += "|skip=" + (os.environ.get("TF_DS_BACKBONE_OVERLAY_SKIP") or "")
     # TF_DS_RANK_CACHE=<dir>: this rank's bytes in one file (RankCache), written on the first start
     sh.cache = RankCache.open(os.environ.get("TF_DS_RANK_CACHE"), Path(model_dir), rank, world,
-                              f"{n_layers}/{bool(dspark)}/{cfg!r}")
+                              f"{n_layers}/{bool(dspark)}/{cfg!r}/{over}")
     if sh.cache is not None:
         log(f"[tensorfold] rank {rank}: rank cache {'reading' if sh.cache.reading else 'writing'} {sh.cache.path}")
     try:
@@ -473,8 +572,8 @@ def _load(sh, cfg, model_dir, rank, world, n_layers, log, dspark, t0) -> Weights
 
         blocks = [load_block(sh, cfg, f"mtp.{j}", cfg.n_layers + j, rank, world, cfg.dspark_routed) for j in range(n)]
         w.dspark = DSparkWeights(blocks, linear(sh, "mtp.0.main_proj"), plain("mtp.0.main_norm.weight"),
-                                 plain(f"{last}.norm.weight"), plain(f"{last}.markov_head.embed.weight"),
-                                 plain(f"{last}.markov_head.head.weight"), plain(f"{last}.confidence_head.proj.weight"))
+                                 plain(f"{last}.norm.weight"), plain(f"{last}.markov_head.embed.weight", torch.float16),
+                                 plain(f"{last}.markov_head.head.weight", torch.float16), plain(f"{last}.confidence_head.proj.weight"))
         log(f"[tensorfold] rank {rank}: DSpark ({n} stages) loaded, {torch.cuda.memory_allocated() / 2**30:.1f} GiB")
     if sh.cache is not None:
         reading = sh.cache.reading

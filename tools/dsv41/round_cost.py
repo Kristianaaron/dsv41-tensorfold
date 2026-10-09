@@ -44,7 +44,9 @@ def main():
     m.forward(sc, torch.tensor(prompt, device="cuda"), 0, host_ids=prompt)
     torch.cuda.synchronize()
     runner = GraphRunner(m, max(rows or [1]))
-    sc.host = prompt[:]
+    from tensorfold.families.deepseek_v41.ops import HostIds
+
+    sc.host = HostIds(prompt)                  # cebu: v0.5 keeps host ids in HostIds (the tool still set a list)
     out = {"rows": {}, "profile": {}}
     P = a.prompt_len
     for R in rows:

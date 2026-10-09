@@ -989,6 +989,10 @@ class MultiDecoder:
                         self.k_hist.setdefault(len(live), [0] * 8)[kk] += 1
                     proposed[s.sid] = r[:kk]
                     confs[s.sid] = cf
+                # cebu: context suffix drafts where the stream repeats its own context (suffix_draft.py; exact)
+                from . import suffix_draft as _sfx
+                room = self.max_rows - sum(1 + len(proposed.get(o.sid, [])) for o in live)
+                _sfx.apply(drafting, proposed, {s.sid: len(proposed.get(s.sid, [])) for s in drafting}, room)
             mark()
             for s in live:
                 sc = s.st.sc

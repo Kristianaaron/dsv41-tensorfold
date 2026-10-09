@@ -42,6 +42,35 @@ WARM_LENGTHS = tuple(int(v) for v in (os.environ.get("TF_DS_WARM_LENGTHS") or
                                       "1,2,3,16,17,32,33,34,48,65,66,96,130,131,160,256,258,259,512,514,1024,2113").split(","))
 
 
+def _mem_stage(rank: int, label: str) -> None:
+    """cebu 2026-10-08: TF_DS_MEMWATCH=1 logs host memory parts at each start-up stage (where the RSS comes from)."""
+
+    if os.environ.get("TF_DS_MEMWATCH", "0") == "1":
+        from . import memwatch
+
+        memwatch.snapshot(rank, label)
+
+
+def _fp32_gemms_exact() -> None:
+    """cebu 2026-10-08: NVIDIA's PyTorch containers set TORCH_ALLOW_TF32_CUBLAS_OVERRIDE=1, which runs every fp32 cuBLAS
+    GEMM (prompt router logits, indexer weights, mHC mixes, the drafter's fp32 heads) in TF32. Turn it off before torch
+    creates its first cuBLAS handle, then prove it: (1 + 2^-12) has no TF32 representation, so a 4096-term dot of it
+    with itself is ~4098 in fp32 and 4096 in TF32."""
+
+    if os.environ.get("TF_DS_ALLOW_TF32", "0") == "1":     # A/B only: measure what exact fp32 costs
+        print("[tensorfold] TF_DS_ALLOW_TF32=1: fp32 GEMMs may run in TF32 (A/B run, not for serving)", flush=True)
+        return
+    if os.environ.get("TORCH_ALLOW_TF32_CUBLAS_OVERRIDE", "0") != "0":
+        os.environ["TORCH_ALLOW_TF32_CUBLAS_OVERRIDE"] = "0"
+        print("[tensorfold] TORCH_ALLOW_TF32_CUBLAS_OVERRIDE was set: fp32 GEMMs forced back to fp32", flush=True)
+    torch.backends.cuda.matmul.allow_tf32 = False
+    x = torch.full((1, 4096), 1 + 2 ** -12, dtype=torch.float32, device="cuda")
+    got = (x @ x.T).item()
+    if got < 4097.0:
+        raise RuntimeError(f"fp32 GEMMs run in TF32 (4096-term check gave {got}, fp32 gives ~4098): "
+                           "start the container with TORCH_ALLOW_TF32_CUBLAS_OVERRIDE=0")
+
+
 class DsEngine:
     def __init__(self, model_dir: Path, *, rank: int, world: int, master: str, port: int, drafts: int = 3,
                  context: int | None = None, engram_dir: str | None = None, vision: bool = False,
@@ -53,6 +82,7 @@ class DsEngine:
         from .model import Comm, Engram, Model
         from .weights import load
 
+        _fp32_gemms_exact()
         torch.cuda.set_device(0)
         self.rank, self.world, self._master = rank, world, master
         # NCCL only moves prompt chunks' partials ([2048, 5120] fp32): the Simple protocol on 4 channels took 3.8 ms a
@@ -61,7 +91,12 @@ class DsEngine:
         os.environ.setdefault("NCCL_MIN_NCHANNELS", "4")
         nccl = NCCL(rank, world, master, port) if world > 1 else None
         self.nccl = nccl
+        _mem_stage(rank, "before load")
         self.w = load(model_dir, rank, world, dspark=drafts > 0)
+        _mem_stage(rank, "after load")
+        from .display_mem import relocate_embed
+
+        relocate_embed(self.w)                            # cebu: TF_DS_DISPLAY_EMBED=1, before any graph captures
         cfg = self.w.cfg
         eng = None
         engram_dir = engram_dir or _default_engram(model_dir)
@@ -81,6 +116,7 @@ class DsEngine:
         elif rank == 0:
             print("[tensorfold] WARNING: no Engram tables (TF_DS_ENGRAM): output will be degraded", flush=True)
         self.model = Model(self.w, Comm(nccl, world, rdma_bytes=int(RDMA_MB * (1 << 20)) // 64 * 64), eng)
+        _mem_stage(rank, "after engram+model")
         # images (--vision): the tower runs on rank 0, which shares each image span's rows; every rank routes the span
         # with the gates' VL bias and keeps Engram out of it
         self.vision = None
@@ -105,6 +141,7 @@ class DsEngine:
                 print(f"[tensorfold] vision tower on rank 0: {(torch.cuda.memory_allocated() - before) / 2**30:.2f} "
                       f"GiB; VL bias for {found} gates", flush=True)
         self.drafter = Drafter(self.model) if drafts > 0 and self.w.dspark is not None else None
+        _mem_stage(rank, "after vision+drafter")
         from .graph import GraphRunner
 
         self.runner = GraphRunner(self.model, drafts + 1) if GRAPHS else None
@@ -131,6 +168,7 @@ class DsEngine:
             mu = self.multi                              # the warm-up's prompts run on slot 0 over the whole window
             self.sc = self.model.pool_view(mu.pool, 0, 0, mu.extents.total)
             self.dc = mu.slots[0].dc
+            _mem_stage(rank, "after parallel pool")
         if nccl is not None:
             from . import markov
 
@@ -145,6 +183,7 @@ class DsEngine:
                                  f"rank (rank 0 and the workers run the same steps): {flags}")
         if WARM:
             self.warm()
+        _mem_stage(rank, "after warm")
         if self.concurrent:
             if WARM:
                 self.multi.warm()
@@ -160,7 +199,12 @@ class DsEngine:
                 self.scheduler = Scheduler(self.multi, max_streams=int(parallel))
                 print(f"[tensorfold] --parallel {int(parallel)}: {int(parallel)} streams share one window of "
                       f"{self.multi.extents.total} tokens (an extent each)", flush=True)
+        from . import memwatch                               # cebu: pinned-cache trim, low-water attribution
+
+        memwatch.trim(self.rank)
+        memwatch.snapshot(self.rank, "ready")
         self._memory_ceiling()
+        memwatch.start(self.rank)
         if rank == 0:
             print(f"[tensorfold] DeepSeek-V4.1 engine ready: {world} rank(s), context {self.limit}, "
                   f"{'DSpark ' + str(drafts) + ' drafts' if self.drafter else 'serial decode'}", flush=True)
@@ -205,10 +249,12 @@ class DsEngine:
                         self._sample(self.prefill(self.sc, self.dc, ids[:n]), [n], None)
                     else:
                         self._run(ids[:n], 6, None, False, lambda new: None, self.drafter is not None)
+                    _mem_stage(self.rank, f"warm prompt {n}")
             if not self.concurrent:
                 self._run(ids[:17], 3, None, False, lambda new: None, False)
             if self.vcfg is not None:
                 self.vision_warm(ids)
+                _mem_stage(self.rank, "warm vision")
         finally:
             self.quiet = False
         t1 = time.perf_counter()

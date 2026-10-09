@@ -48,3 +48,34 @@ Modified upstream files:
   .gitignore                                   ignores macOS ._* files
 
 The "git log" of this branch and tools/dsv41/ATTRIBUTION.md describe the changes and their sources.
+
+----------------------------------------------------------------------------------------------------------------------
+Further changes in this fork (Apache License 2.0, section 4(b))
+
+This repository is a fork of bertholomus/TensorFold at commit 808eb4a (https://github.com/bertholomus/TensorFold), which is
+itself a fork of ashhart/TensorFold (https://github.com/ashhart/TensorFold). Changes below by Kristian Aaron (Krishando),
+Copyright 2026. They let the deepseek_v41 family serve packs whose routed experts are EXL3 at mixed widths (2-5 bits per
+expert) while attention, shared experts and head stay in DeepSeek's own FP8/bf16, as used by
+https://huggingface.co/Krishando/DeepSeek-V4.1-Flash-EXL3-2.86bpw. Everything above this section is unchanged.
+
+Added:
+  src/tensorfold/families/deepseek_v41/cuda/native_fp8.py          DeepSeek's own FP8 projections on the MXFP8 kernels
+  src/tensorfold/families/deepseek_v41/cuda/native_fp4_experts.py  DSpark draft experts in the checkpoint's own MXFP4
+  src/tensorfold/families/deepseek_v41/cuda/suffix_draft.py        context suffix drafts beside DSpark (TF_DS_SUFFIX_DRAFT)
+  src/tensorfold/families/deepseek_v41/cuda/memwatch.py            memory low-water logging and floor (TF_DS_MEMWATCH)
+  src/tensorfold/families/deepseek_v41/cuda/display_mem.py         optional, off by default (TF_DS_DISPLAY_EMBED); needs an
+                                                                   external DRM helper that is not part of this repository
+  docs/cebu-native-fp8-port.md                                     design notes for the native FP8 port
+  recipes/dsv41-2spark/                                            Dockerfile, launch script and README for the release
+
+Modified upstream files:
+  src/tensorfold/families/deepseek_v41/cuda/weights.py   loads native FP8 linears and mixed-width EXL3 experts
+  src/tensorfold/families/deepseek_v41/cuda/model.py     builds the native FP8 / MXFP4 modules where the pack has them
+  src/tensorfold/families/deepseek_v41/cuda/engine.py    suffix drafts, memory watch and warm-up wiring
+  src/tensorfold/families/deepseek_v41/cuda/multi.py     suffix-draft and memory-watch hooks in the round
+  src/tensorfold/families/deepseek_v41/cuda/dspark.py    native MXFP4 draft experts
+  src/tensorfold/cuda/rdma.py, src/tensorfold/cuda/rdma_gather.cu   small fixes for the two-Spark link
+  tools/dsv41/draft_bench.py, tools/dsv41/round_cost.py  benchmark clients follow the changes above
+  README.md                                              a note above the existing fork note
+
+"git log upstream/808eb4a..HEAD" shows every change in this fork.
