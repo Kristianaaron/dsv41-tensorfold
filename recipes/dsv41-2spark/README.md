@@ -7,9 +7,10 @@ TensorFold, tensor parallel 2 over the Sparks' QSFP link, 262k context, vision o
 
 | Part | Source | Licence |
 |---|---|---|
-| Model | [deepseek-ai/DeepSeek-V4.1-Flash](https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash) | MIT |
+| The quant (calibration, per-expert bit allocation, encode, evaluation) | original work, [Krishando](https://huggingface.co/Krishando/DeepSeek-V4.1-Flash-EXL3-2.86bpw) | MIT |
+| Base model | [deepseek-ai/DeepSeek-V4.1-Flash](https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash) | MIT |
 | Inference engine | [ashhart/TensorFold](https://github.com/ashhart/TensorFold) | Apache-2.0 (MIT before 0.6.0) |
-| DeepSeek-V4.1 family for TensorFold | [bertholomus/TensorFold](https://github.com/bertholomus/TensorFold) @ `808eb4a` | Apache-2.0 |
+| DeepSeek-V4.1 family for TensorFold (parts used by this runtime) | [bertholomus/TensorFold](https://github.com/bertholomus/TensorFold) @ `808eb4a` | Apache-2.0 |
 | EXL3 format and encoder | [turboderp-org/exllamav3](https://github.com/turboderp-org/exllamav3) | MIT |
 | Native FP8 backbone, mixed-width experts, suffix drafts, memory watch, this recipe | this fork (see `NOTICE`) | Apache-2.0 |
 
