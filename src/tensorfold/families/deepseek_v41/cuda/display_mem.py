@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Kristian Aaron (Krishando). Added in this fork; see NOTICE, "Further changes in this fork".
 """Token embeddings in the display carve-out (cebu, 2026-10-07; TF_DS_DISPLAY_EMBED=1).
 
 A headless GB10 can register a 1.75 GiB DRM dumb buffer as device memory outside the kernel's MemAvailable

@@ -1,3 +1,4 @@
+// Modified 2026 by Kristian Aaron (Krishando): small fixes for the two-Spark link. Original: bertholomus/TensorFold at 808eb4a. See NOTICE.
 // One-hop all-gather of small fp32 rank partials over RoCE (TP decode on GB10; tensorfold/cuda/rdma.py).
 //
 // A staging kernel copies this rank's partial into a slot of pinned host memory and rings a doorbell there. A CPU thread

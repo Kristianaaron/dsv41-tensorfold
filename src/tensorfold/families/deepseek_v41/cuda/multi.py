@@ -1,3 +1,4 @@
+# Modified 2026 by Kristian Aaron (Krishando): suffix-draft and memory-watch hooks in the round. Original: bertholomus/TensorFold at 808eb4a. See NOTICE.
 """DeepSeek-V4.1's concurrent decoding (``--parallel N``): up to N requests on the lane at once, every live stream's
 verify window in one forward a round, each reply exactly its solo run.
 

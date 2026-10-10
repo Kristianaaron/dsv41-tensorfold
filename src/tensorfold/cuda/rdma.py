@@ -1,3 +1,4 @@
+# Modified 2026 by Kristian Aaron (Krishando): small fixes for the two-Spark link. Original: bertholomus/TensorFold at 808eb4a. See NOTICE.
 """One-hop all-gather of small fp32 rank partials over RoCE RDMA writes (rdma_gather.cu), for TP decode on GB10.
 
 NCCL moves a decode window's [R, hidden] fp32 partial through its proxy in ~35 us (R=1) inside a CUDA graph; a raw RoCE

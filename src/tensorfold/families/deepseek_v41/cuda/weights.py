@@ -1,3 +1,4 @@
+# Modified 2026 by Kristian Aaron (Krishando): loads native FP8 linears and mixed-width EXL3 experts. Original: bertholomus/TensorFold at 808eb4a. See NOTICE.
 """Per-rank weights of DeepSeek-V4.1 on TP ranks (our split, DESIGN.md section 2).
 
 Routed and shared experts: intermediate 2304 split in halves (gate/up by output column, down by input row).

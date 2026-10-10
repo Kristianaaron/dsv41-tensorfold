@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Kristian Aaron (Krishando). Added in this fork; see NOTICE, "Further changes in this fork".
 """DSpark draft experts in the checkpoint's own MXFP4 on the NVFP4 expert kernels (cebu milestone 1b, 2026-10-07).
 
 DeepSeek-V4.1 ships the routed experts of its MTP / DSpark draft blocks as MXFP4: E2M1 codes two a byte (low nibble

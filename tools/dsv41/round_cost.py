@@ -1,3 +1,4 @@
+# Modified 2026 by Kristian Aaron (Krishando): follows the native FP8 / MXFP4 changes. Original: bertholomus/TensorFold at 808eb4a. See NOTICE.
 """Cost of one graph-captured forward of R rows (R = 1 .. 16) at a context bucket, on TP ranks (same command on each),
 plus a per-kernel CUDA-time breakdown of eager forwards at a few row counts (rank 0 prints and writes).
 

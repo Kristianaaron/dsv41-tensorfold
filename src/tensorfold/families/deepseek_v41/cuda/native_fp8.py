@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Kristian Aaron (Krishando). Added in this fork; see NOTICE, "Further changes in this fork".
 """DeepSeek-V4.1's own FP8 projections (e4m3, one e8m0 power of two per 32x32 block) on the MXFP8 kernels.
 
 cebu-profiler packs keep every projection but the routed experts in the checkpoint's native FP8. ``Mx8Linear`` takes

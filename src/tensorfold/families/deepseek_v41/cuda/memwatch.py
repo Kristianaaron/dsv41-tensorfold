@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Kristian Aaron (Krishando). Added in this fork; see NOTICE, "Further changes in this fork".
 """Memory attribution for the two-Spark serve (cebu, 2026-10-07; TF_DS_MEMWATCH=1).
 
 A thread samples MemAvailable every 0.5 s and logs each new low-water mark (every 0.25 GiB lower) with what holds

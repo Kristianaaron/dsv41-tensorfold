@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Kristian Aaron (Krishando). Added in this fork; see NOTICE, "Further changes in this fork".
 """Context suffix drafts beside DSpark (cebu mini-project 5, 2026-10-07; TF_DS_SUFFIX_DRAFT=1).
 
 Code edits, JSON, tool output and quoted text repeat runs that already sit in the stream's own context. When the

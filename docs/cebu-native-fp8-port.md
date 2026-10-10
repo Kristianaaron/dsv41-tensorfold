@@ -1,5 +1,7 @@
 # DeepSeek-V4.1 TP2 with the native FP8 backbone (cebu port, 2026-10-07)
 
+_Written by Kristian Aaron (Krishando), 2026. Apache-2.0, part of this fork's changes (see `NOTICE`)._
+
 Goal: serve packs whose routed experts are EXL3 (any width 1-8, mixed per layer, `mcg` or `mul1`) while every other
 projection stays in DeepSeek's own FP8 (cebu-profiler v4.1/v5 packs), on this engine at TP=2 over two GB10 Sparks.
 Upstream today builds every linear as `Exl3Linear` (Mia-style all-EXL3 packs only).

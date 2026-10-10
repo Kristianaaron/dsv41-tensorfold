@@ -1,3 +1,4 @@
+# Modified 2026 by Kristian Aaron (Krishando): builds native FP8 / MXFP4 modules where the pack has them. Original: bertholomus/TensorFold at 808eb4a. See NOTICE.
 """DeepSeek-V4.1 forward on one TP rank: rows of one sequence at consecutive positions (a prompt chunk, a decode
 token, a verify window), updating that sequence's caches.
 

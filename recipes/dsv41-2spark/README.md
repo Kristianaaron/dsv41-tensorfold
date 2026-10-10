@@ -1,18 +1,35 @@
-# DeepSeek-V4.1-Flash 2.86 bpw on two DGX Sparks
+# DeepSeek-V4.1-Flash · EXL3 · 2.86 bpw · Hessian-traced
 
-The serving recipe for [Krishando/DeepSeek-V4.1-Flash-EXL3-2.86bpw](https://huggingface.co/Krishando/DeepSeek-V4.1-Flash-EXL3-2.86bpw):
-TensorFold, tensor parallel 2 over the Sparks' QSFP link, 262k context, vision on, native DSpark drafter plus suffix drafts.
+The two-DGX-Spark serving recipe.
+
+Weights: [Krishando/DeepSeek-V4.1-Flash-EXL3-2.86bpw](https://huggingface.co/Krishando/DeepSeek-V4.1-Flash-EXL3-2.86bpw).
+It runs on TensorFold, tensor parallel 2 over the Sparks' QSFP link, with 262k context, vision on, and the native
+DSpark drafter plus suffix drafts.
 
 ## Credits and provenance
 
-| Part | Source | Licence |
-|---|---|---|
-| The quant (calibration, per-expert bit allocation, encode, evaluation) | original work, [Krishando](https://huggingface.co/Krishando/DeepSeek-V4.1-Flash-EXL3-2.86bpw) | MIT |
-| Base model | [deepseek-ai/DeepSeek-V4.1-Flash](https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash) | MIT |
-| Inference engine | [ashhart/TensorFold](https://github.com/ashhart/TensorFold) | Apache-2.0 (MIT before 0.6.0) |
-| DeepSeek-V4.1 family for TensorFold (parts used by this runtime) | [bertholomus/TensorFold](https://github.com/bertholomus/TensorFold) @ `808eb4a` | Apache-2.0 |
-| EXL3 format and encoder | [turboderp-org/exllamav3](https://github.com/turboderp-org/exllamav3) | MIT |
-| Native FP8 backbone, mixed-width experts, suffix drafts, memory watch, this recipe | this fork (see `NOTICE`) | Apache-2.0 |
+The quant is my own work. The engine that serves it is mostly other people's, and they're credited here in full.
+
+| Part | Who | Source | Licence |
+|---|---|---|---|
+| The quant: calibration, per-expert 2–5-bit allocation, encode, evaluation | Kristian Aaron (Krishando), original work | [Krishando/DeepSeek-V4.1-Flash-EXL3-2.86bpw](https://huggingface.co/Krishando/DeepSeek-V4.1-Flash-EXL3-2.86bpw) | MIT |
+| Base model, its FP8 weights and the Engram tables | DeepSeek ([@deepseek_ai](https://x.com/deepseek_ai)) | [deepseek-ai/DeepSeek-V4.1-Flash](https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash) | MIT |
+| TensorFold, the inference engine | ashhart ([@ashxhart](https://x.com/ashxhart)) and the TensorFold contributors | [ashhart/TensorFold](https://github.com/ashhart/TensorFold) | Apache-2.0 (MIT before 0.6.0) |
+| The `deepseek_v41` family: DeepSeek-V4.1 tensor-parallel over two GB10s, the RDMA all-gather, DSpark drafting, vision | BertholomusAI, Albert Lee ([@bertholomusai](https://x.com/bertholomusai)) | [bertholomus/TensorFold](https://github.com/bertholomus/TensorFold) at `808eb4a` | Apache-2.0 |
+| The EXL3 format and the encoder the quant was made with | turboderp | [turboderp-org/exllamav3](https://github.com/turboderp-org/exllamav3) | MIT |
+| Native FP8 backbone and mixed-width EXL3 experts, MXFP4 draft experts, suffix drafts, memory watch, this recipe | Kristian Aaron (Krishando) | this repository | Apache-2.0 |
+| Run-time image | NVIDIA | `nvcr.io/nvidia/pytorch:26.07-py3` (not included) | NVIDIA's container licence |
+
+How the provenance is kept:
+
+- This repository carries bertholomus/TensorFold's full history, which carries ashhart/TensorFold's. Nothing is squashed,
+  and every upstream author keeps their commits. Mine sit on top: `git log 808eb4a..HEAD` lists exactly what I changed.
+- `NOTICE` keeps TensorFold's and BertholomusAI's notices unchanged and lists every file I added or modified
+  (Apache-2.0, section 4(b)). Each of those files also says so in its first line.
+- The sources behind the `deepseek_v41` family and their licences are in BertholomusAI's
+  [`tools/dsv41/ATTRIBUTION.md`](../../tools/dsv41/ATTRIBUTION.md).
+- "DeepSeek" and "DeepSeek-V4.1-Flash" belong to DeepSeek; "DGX Spark" and "GB10" belong to NVIDIA. This project is not
+  affiliated with or endorsed by DeepSeek, NVIDIA, the TensorFold authors or BertholomusAI.
 
 ## What you need
 

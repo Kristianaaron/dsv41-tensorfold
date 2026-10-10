@@ -1,6 +1,6 @@
 # TensorFold
 
-> **Runtime for [Krishando/DeepSeek-V4.1-Flash-EXL3-2.86bpw](https://huggingface.co/Krishando/DeepSeek-V4.1-Flash-EXL3-2.86bpw).**
+> **Runtime for DeepSeek-V4.1-Flash · EXL3 · 2.86 bpw · Hessian-traced ([Krishando/DeepSeek-V4.1-Flash-EXL3-2.86bpw](https://huggingface.co/Krishando/DeepSeek-V4.1-Flash-EXL3-2.86bpw)).**
 > The quant itself is original work by Krishando (its own calibration, per-expert 2–5-bit allocation and native FP8
 > backbone). To serve it, this repository builds on parts of [bertholomus/TensorFold](https://github.com/bertholomus/TensorFold)
 > (its DeepSeek-V4.1 family, at commit `808eb4a`), which in turn is built on [ashhart/TensorFold](https://github.com/ashhart/TensorFold).

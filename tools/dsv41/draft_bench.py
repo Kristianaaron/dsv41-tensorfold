@@ -1,3 +1,4 @@
+# Modified 2026 by Kristian Aaron (Krishando): follows the native FP8 / MXFP4 changes. Original: bertholomus/TensorFold at 808eb4a. See NOTICE.
 """A one-GPU proxy of the DSpark drafter graph (dspark.BatchDraftGraph) with rank 0's TP2 drafter weights (its three
 stages, main_proj, the head's vocabulary half, the replicated Markov head / embedding / confidence head), each TP
 gather replaced by a local stand-in (rank 0's tensor in every rank's slot: two small kernels, as the RDMA gather's

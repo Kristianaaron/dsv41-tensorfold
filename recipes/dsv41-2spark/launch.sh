@@ -1,5 +1,6 @@
 #!/bin/bash
 # SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Kristian Aaron (Krishando).
 # Serve Krishando/DeepSeek-V4.1-Flash-EXL3-2.86bpw on two DGX Sparks with TensorFold, tensor parallel 2.
 # Rank 1 starts on the worker first, then rank 0 on this (head) node. Stop is graceful, head first.
 #

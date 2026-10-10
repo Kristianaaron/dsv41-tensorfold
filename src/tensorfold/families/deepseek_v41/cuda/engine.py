@@ -1,3 +1,4 @@
+# Modified 2026 by Kristian Aaron (Krishando): suffix drafts, memory watch and warm-up wiring. Original: bertholomus/TensorFold at 808eb4a. See NOTICE.
 """DeepSeek-V4.1 on TF_TP_WORLD ranks behind TensorFold's CUDA server: rank 0 serves, the others mirror each request.
 
 One request at a time. Sampling is keyed by (seed, position, token) on the gathered logits, which every rank holds

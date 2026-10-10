@@ -78,4 +78,4 @@ Modified upstream files:
   tools/dsv41/draft_bench.py, tools/dsv41/round_cost.py  benchmark clients follow the changes above
   README.md                                              a note above the existing fork note
 
-"git log upstream/808eb4a..HEAD" shows every change in this fork.
+"git log 808eb4a..HEAD" shows every change in this fork, and each added or modified file says so in its first line.

@@ -1,3 +1,4 @@
+# Modified 2026 by Kristian Aaron (Krishando): native MXFP4 draft experts. Original: bertholomus/TensorFold at 808eb4a. See NOTICE.
 """DSpark drafting (DeepSeek's in-checkpoint draft blocks, ``mtp.*``) and exact verification.
 
 The drafter only proposes. Its three blocks attend a window of the target's projected taps (``main_x``: main_proj
