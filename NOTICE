@@ -67,6 +67,7 @@ Added:
                                                                    external DRM helper that is not part of this repository
   docs/cebu-native-fp8-port.md                                     design notes for the native FP8 port
   recipes/dsv41-2spark/                                            Dockerfile, launch script and README for the release
+  tools/dsv41/decision_kld.py                                      closeness to the full model at an agent's decision points
 
 Modified upstream files:
   src/tensorfold/families/deepseek_v41/cuda/weights.py   loads native FP8 linears and mixed-width EXL3 experts

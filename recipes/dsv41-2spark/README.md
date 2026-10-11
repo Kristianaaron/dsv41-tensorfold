@@ -140,6 +140,43 @@ kernels into `~/.cache/tensorfold-dsv41`; later starts reuse them and copy them 
 A 6-hour soak (3,822 replies, mixed traffic, 4 streams) had 0 failures; the lowest free memory was 4.7 GiB on the head
 node and 6.1 GiB on the worker.
 
+## Decision points in agent sessions
+
+The headline KLD (0.168 on agent sessions) averages every token. An agent run is usually derailed by a few of them:
+whether to call a tool or answer, which tool, whether to make another call, and when to stop. This scores only those
+tokens, from the same served dumps and the same full-model reference as the headline number:
+
+| Decision | Positions | This quant: KLD, same top-1 | Mia-AiLab 2.9 bpw: KLD, same top-1 | KLD ratio (95% CI) |
+|---|---|---|---|---|
+| Call a tool, or answer (the tokens after `</think>`) | 105 | 0.059, 96.2% | 0.091, 94.3% | 0.65 (0.38–0.87) |
+| Which tool (every token of the name) | 96 | 0.032, 93.8% | 0.107, 90.6% | 0.30 (0.12–0.70) |
+| Which tool (first token of the name) | 42 | 0.052, 88.1% | 0.197, 85.7% | 0.26 (0.09–0.70) |
+| Another call, or done | 41 | 0.003, 95.1% | 0.010, 92.7% | 0.30 (0.22–0.40) |
+| Stop (end of the turn) | 48 | 0.004, 100% | 0.005, 100% | 0.75 (0.32–1.71) |
+| **All decision points** | **285** | **0.034, 95.8%** | **0.071, 93.7%** | **0.47 (0.21–0.73)** |
+| Every position (the headline) | 70,570 | 0.168, 90.7% | 0.248, 88.4% | |
+
+"Same top-1" is how often the quant's most likely token is the full model's, which is the choice it makes greedily.
+The ratio is this quant's mean KLD over the reference's on the same positions; its interval resamples whole sessions.
+
+What this does and doesn't show:
+
+- At decision points this quant stays about twice as close to the full model as the reference build. The same-top-1
+  gaps are small (95.8% vs 93.7%); most of the difference is in how sure each quant is, not in which token wins.
+- Both quants are closer to the full model at decision points than on average. Stopping is near-identical for both.
+- It is small: 18 sessions, 42 tool calls. Teacher-forced: each decision is scored on the full model's own history, so it
+  measures single decisions, not whole agent runs. A tool-calling benchmark is still to do.
+- Served through vLLM, like the headline KLD. TensorFold cannot return prompt log-probabilities yet.
+
+To reproduce on your own holdout (`tools/dsv41/decision_kld.py`; needs `torch` and `tokenizers`):
+
+```bash
+python3 tools/dsv41/decision_kld.py --manifest holdout-manifest.json --tokenizer tokenizer.json \
+  --teacher teacher_ref_b000-009.pt teacher_ref_b009-018.pt --student this-quant.pt other-quant.pt --out decisions.json
+```
+
+The "every position" row reproduces the headline KLD exactly, which checks that the decision rows come from the same data.
+
 ## Safety notes for GB10
 
 GPU memory on a Spark is system memory. Keep the memory floor on, start with the 110 GiB margin above, and stop with
