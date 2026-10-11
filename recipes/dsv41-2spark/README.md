@@ -28,8 +28,67 @@ How the provenance is kept:
   (Apache-2.0, section 4(b)). Each of those files also says so in its first line.
 - The sources behind the `deepseek_v41` family and their licences are in BertholomusAI's
   [`tools/dsv41/ATTRIBUTION.md`](../../tools/dsv41/ATTRIBUTION.md).
-- "DeepSeek" and "DeepSeek-V4.1-Flash" belong to DeepSeek; "DGX Spark" and "GB10" belong to NVIDIA. This project is not
-  affiliated with or endorsed by DeepSeek, NVIDIA, the TensorFold authors or BertholomusAI.
+
+### Everything the quant was made and measured with
+
+The same list is on the [model card](https://huggingface.co/Krishando/DeepSeek-V4.1-Flash-EXL3-2.86bpw#credits-and-provenance).
+
+#### Model, format and code
+
+| What | Who | Used for | Licence |
+|---|---|---|---|
+| [DeepSeek-V4.1-Flash](https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash), commit `df42c10` | DeepSeek ([@deepseek_ai](https://x.com/deepseek_ai)) | The weights: FP8 backbone, routed experts (the part quantized here), DSpark drafter, vision tower, Engram tables. Its reference inference code was used to check our full-model reference | MIT |
+| [ExLlamaV3](https://github.com/turboderp-org/exllamav3) | turboderp | The EXL3 format, the encoder that made this quant, and the proxy-error measure behind the bit allocation | MIT |
+| [QTIP](https://arxiv.org/abs/2406.11235) | Albert Tseng, Qingyao Sun, David Hou, Christopher De Sa | The trellis quantization method EXL3 builds on | Paper |
+| [DeepSeek-V4.1-Flash-EXL3-vLLM-2x-DGX-Spark](https://github.com/sfxnz/DeepSeek-V4.1-Flash-EXL3-vLLM-2x-DGX-Spark) and [sfxnz/DeepSeek-V4.1-Flash-EXL3](https://huggingface.co/sfxnz/DeepSeek-V4.1-Flash-EXL3) | Sufyan Shah ([sfxnz](https://huggingface.co/sfxnz)) | An earlier 2-Spark EXL3 pack and recipe for this model. This quant's encoder started from its `quantize_experts_exl3.py` and `pack_meta.py` (stream the official shards, EXL3 for the routed experts, every other tensor kept as stored, Engram tables read from disk); the Hessian-traced calibration and per-expert widths were added on top | MIT |
+| [TensorFold](https://github.com/ashhart/TensorFold) | ashhart ([@ashxhart](https://x.com/ashxhart)) and the [TensorFold contributors](https://github.com/ashhart/TensorFold/graphs/contributors) | The inference engine. Every speed on this card is TensorFold's | Apache-2.0 (MIT before 0.6.0) |
+| [`deepseek_v41` family for TensorFold](https://github.com/bertholomus/TensorFold) at `808eb4a` | BertholomusAI, Albert Lee ([@bertholomusai](https://x.com/bertholomusai)) | DeepSeek-V4.1 tensor-parallel over two GB10s; the runtime builds on it | Apache-2.0 |
+| [Transformers](https://github.com/huggingface/transformers) | Hugging Face | The DeepSeek-V4.1 model code behind the layer-by-layer full-model reference and the Hessian capture | Apache-2.0 |
+| [vLLM](https://github.com/vllm-project/vllm) | The vLLM project | Serving for the KLD measurements | Apache-2.0 |
+| vLLM EXL3 overlay from the DeepSeek-V4.1 serving kit | MiaAI-Lab | Running EXL3 packs inside vLLM for the KLD measurements | AGPL-3.0 |
+| PyTorch container `nvcr.io/nvidia/pytorch:26.07-py3` | NVIDIA | The run-time image (not included) | NVIDIA's container licence |
+
+#### Calibration data (1.03M tokens)
+
+55% is the author's own agent sessions (private; rendered in the V4.1 chat format with thinking and tool calls). The rest:
+
+| Dataset | Who | Domain | Licence |
+|---|---|---|---|
+| [FineWeb-Edu](https://huggingface.co/datasets/HuggingFaceFW/fineweb-edu) (sample-10BT) | Hugging Face | Prose | ODC-By 1.0 |
+| [WikiText-103](https://huggingface.co/datasets/Salesforce/wikitext) (train) | Salesforce (Merity et al.) | Prose | CC BY-SA 3.0 |
+| [codeparrot-clean-valid](https://huggingface.co/datasets/codeparrot/codeparrot-clean-valid) | CodeParrot | Code | See its dataset card |
+| [Magicoder-OSS-Instruct-75K](https://huggingface.co/datasets/ise-uiuc/Magicoder-OSS-Instruct-75K) | ise-uiuc (Magicoder authors) | Code | MIT |
+| [OpenWebMath](https://huggingface.co/datasets/open-web-math/open-web-math) | Paster et al. | Maths | ODC-By 1.0 |
+| [OpenMathInstruct-2](https://huggingface.co/datasets/nvidia/OpenMathInstruct-2) | NVIDIA | Maths | CC BY 4.0 |
+| [GSM8K](https://huggingface.co/datasets/openai/gsm8k) (train) | OpenAI | Maths | MIT |
+| [Hermes Function Calling v1](https://huggingface.co/datasets/NousResearch/hermes-function-calling-v1) | Nous Research | Tool calls | Apache-2.0 |
+| [PG-19](https://huggingface.co/datasets/emozilla/pg19) | Google DeepMind (Rae et al.) | Long documents | Apache-2.0 |
+| [Wikipedia](https://huggingface.co/datasets/wikimedia/wikipedia) 20231101 (ar, de, es, fr, hi, ja, ru, zh) | Wikimedia | Multilingual | CC BY-SA 3.0 |
+
+#### Evaluation
+
+| Dataset or tool | Who | Used for | Licence |
+|---|---|---|---|
+| [WikiText-103](https://huggingface.co/datasets/Salesforce/wikitext) (test) | Salesforce (Merity et al.) | General holdout: prose and long documents | CC BY-SA 3.0 |
+| [HumanEval](https://huggingface.co/datasets/openai/openai_humaneval) | OpenAI | General holdout: code | MIT |
+| [GSM8K](https://huggingface.co/datasets/openai/gsm8k) (test) | OpenAI | General holdout: maths; the GSM8K score | MIT |
+| [Belebele](https://huggingface.co/datasets/facebook/belebele) (8 languages) | Meta AI | General holdout: multilingual | CC BY-SA 4.0 |
+| [MMLU](https://huggingface.co/datasets/cais/mmlu) | Hendrycks et al. | The MMLU score | MIT |
+| [three.js](https://github.com/mrdoob/three.js) | The three.js authors | The long-generation task (a 3D game) | MIT |
+| [Playwright](https://github.com/microsoft/playwright) with Chromium | Microsoft; the Chromium project | Headless play test of the generated games | Apache-2.0; BSD-3-Clause |
+
+#### Reference builds measured during development
+
+Measured on the same harness while choosing this build:
+[Mia-AiLab/DeepSeek-V4.1-Flash-EXL3-2.9bpw](https://huggingface.co/Mia-AiLab/DeepSeek-V4.1-Flash-EXL3-2.9bpw) and
+[0xSero/DeepSeek-V4.1-Flash-Spark](https://huggingface.co/0xSero/DeepSeek-V4.1-Flash-Spark) (served with its launcher,
+[0xSero/DeepSeek-V4.1-Flash-Two-Sparks](https://github.com/0xSero/DeepSeek-V4.1-Flash-Two-Sparks) at `ee68818`). Their weights
+are not part of this quant.
+
+#### Names
+
+"DeepSeek" and "DeepSeek-V4.1-Flash" belong to DeepSeek; "DGX Spark" and "GB10" belong to NVIDIA. This project is not
+affiliated with or endorsed by DeepSeek, NVIDIA, or any of the people and projects above.
 
 ## What you need
 
